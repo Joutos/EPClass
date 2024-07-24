@@ -69,7 +69,7 @@ model.compile('adam', loss=tf.losses.BinaryCrossentropy(), metrics=['accuracy'])
 model.summary()
 logdir = 'logs'
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir)
-hist = model.fit(train, epochs=20, validation_data=val, callbacks=[tensorboard_callback])
+hist = model.fit(train, epochs=40, validation_data=val, callbacks=[tensorboard_callback])
 fig = plt.figure()
 plt.plot(hist.history['loss'], color='teal', label='loss')
 plt.plot(hist.history['val_loss'], color='orange', label='val_loss')
@@ -113,4 +113,4 @@ if yhat > 0.5:
 else:
     print(f'Predicted class is Certa')
 
-model.save(os.path.join('models', 'imageclassifier2.h5'))
+model.save(os.path.join('models', 'imageclassifierTraços.keras'))
