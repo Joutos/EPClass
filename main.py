@@ -1,81 +1,79 @@
 import tensorflow as tf
 import os
-import cv2
-import imghdr
-import numpy as np
-from matplotlib import pyplot as plt
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout
-from tensorflow.keras.metrics import Precision, Recall, BinaryAccuracy
-from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout, BatchNormalization
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import TensorBoard
+import matplotlib.pyplot as plt
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
-tf.config.list_physical_devices('GPU')
-
 data_dir = 'data'
-image_exts = ['jpeg', 'png', 'jpg', 'bmp']
-# print('aquiii')
-for image_class in os.listdir(data_dir):
-    for image in os.listdir(os.path.join(data_dir, image_class)):
-        image_path = os.path.join(data_dir, image_class, image)
-        try:
-            img = cv2.imread(image_path)
-            tip = imghdr.what(image_path)
-            if tip not in image_exts:
-                print('Extensão não presente na lista {}' . format(image_path))
-                os.remove(image_path)
-        except Exception as e:
-            print('Problema com a imagem {}'.format(image_path))
-            
-data = tf.keras.utils.image_dataset_from_directory(data_dir)
-data_iterator = data.as_numpy_iterator()
-batch = data_iterator.next()
-# print('aqui')
-fig, ax = plt.subplots(ncols=4, figsize=(20,20))
-for idx, img in enumerate(batch[0][:4]):
-    ax[idx].imshow(img.astype(int))
-    ax[idx].title.set_text(batch[1][idx])
 
-data = data.map(lambda x,y: (x/255, y))
-data.as_numpy_iterator().next()
+# Utilize o ImageDataGenerator para carregar e pré-processar as imagens
+datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.3  # Porcentagem para validação
+)
 
-train_size = int(len(data)*.7)
-val_size   = int(len(data)*.2)
-test_size  = int(len(data)*.1)
+train_generator = datagen.flow_from_directory(
+    data_dir,
+    target_size=(256, 256),
+    batch_size=32,
+    class_mode='binary',
+    subset='training'  # Para o conjunto de treinamento
+)
 
-train_size
+val_generator = datagen.flow_from_directory(
+    data_dir,
+    target_size=(256, 256),
+    batch_size=32,
+    class_mode='binary',
+    subset='validation'  # Para o conjunto de validação
+)
 
-train = data.take(train_size)
-val = data.skip(train_size).take(val_size)
-test = data.skip(train_size + val_size).take(test_size)
-
-train
-
+# Criação do modelo
 model = Sequential()
 model.add(Conv2D(16, (3, 3), 1, activation='relu', input_shape=(256, 256, 3)))
+model.add(BatchNormalization())
 model.add(MaxPooling2D())
 model.add(Conv2D(32, (3, 3), 1, activation='relu'))
+model.add(BatchNormalization())
 model.add(MaxPooling2D())
 model.add(Conv2D(16, (3, 3), 1, activation='relu'))
+model.add(BatchNormalization())
 model.add(MaxPooling2D())
 model.add(Flatten())
 model.add(Dense(256, activation='relu'))
+model.add(Dropout(0.5))  # Corrigindo o erro, incluindo model.add
 model.add(Dense(1, activation='sigmoid'))
 
-model.compile('adam', loss=tf.losses.BinaryCrossentropy(), metrics=['accuracy'])
+model.compile('adam', loss=tf.losses.BinaryCrossentropy(),
+              metrics=['accuracy'])
 model.summary()
+
+# Callback para TensorBoard
 logdir = 'logs'
-tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir)
-hist = model.fit(train, epochs=40, validation_data=val, callbacks=[tensorboard_callback])
+tensorboard_callback = TensorBoard(log_dir=logdir)
+
+# Treinamento do modelo
+hist = model.fit(
+    train_generator,
+    epochs=20,
+    validation_data=val_generator,
+    callbacks=[tensorboard_callback]
+)
+
+# Plotando métricas de treinamento
 fig = plt.figure()
 plt.plot(hist.history['loss'], color='teal', label='loss')
 plt.plot(hist.history['val_loss'], color='orange', label='val_loss')
 fig.suptitle('Loss', fontsize=20)
 plt.legend(loc="upper left")
 plt.show()
+
 fig = plt.figure()
 plt.plot(hist.history['accuracy'], color='teal', label='accuracy')
 plt.plot(hist.history['val_accuracy'], color='orange', label='val_accuracy')
@@ -83,34 +81,25 @@ fig.suptitle('Accuracy', fontsize=20)
 plt.legend(loc="upper left")
 plt.show()
 
-pre = Precision()
-re = Recall()
-acc = BinaryAccuracy()
+# Avaliação do modelo
+loss, accuracy = model.evaluate(val_generator)
+print(f'Validation accuracy: {accuracy}')
 
-for batch in test.as_numpy_iterator():
-    X, y = batch
-    yhat = model.predict(X)
-    pre.update_state(y, yhat)
-    re.update_state(y, yhat)
-    acc.update_state(y, yhat)
-
-print(pre.result(), re.result(), acc.result())
-
-img = cv2.imread('./1_imagem_5.png')
+# Exemplo de predição com uma imagem específica
+img_path = './1_imagem_5.png'
+img = tf.keras.preprocessing.image.load_img(img_path, target_size=(256, 256))
 plt.imshow(img)
 plt.show()
 
-resize = tf.image.resize(img, (256, 256))
-plt.imshow(resize.numpy().astype(int))
-plt.show()
+img_array = tf.keras.preprocessing.image.img_to_array(img)
+img_array = tf.expand_dims(img_array, 0)  # Adiciona dimensão do batch
+img_array /= 255.0  # Normalização
+prediction = model.predict(img_array)
 
-yhat = model.predict(np.expand_dims(resize/255, 0))
-
-yhat
-
-if yhat > 0.5:
-    print(f'Predicted class is Errada')
+if prediction > 0.5:
+    print(f'Predicted class: Errada')
 else:
-    print(f'Predicted class is Certa')
+    print(f'Predicted class: Certa')
 
-model.save(os.path.join('models', 'imageclassifierTraços.keras'))
+# Salvando o modelo
+model.save(os.path.join('models', 'imageclassifierTraços2500.keras'))
